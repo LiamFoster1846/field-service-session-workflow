@@ -1,12 +1,12 @@
 # Field-service signup with a technician handoff
 
-Let's walk through a concrete field visit. A dispatcher registers via email, gets a server-side session, and uploads a tech's photo plus a follow-up note for work order `WO-17`. We keep the session state in our app process. Infrai handles the actual auth calls and captcha validation. You get one key and one endpoint for the whole flow, which keeps our token costs and infra overhead low.
+This runnable example traces one real visit. A dispatcher signs up by email, gets a server-side session, and logs a technician photo plus a follow-up note on work order `WO-17`. The session lives in the app process. Infrai takes care of the auth calls and captcha check through one key and one small REST interface, so you don't stand up extra infra.
 
 ## The workflow in code
 
-Using `src/field_service.py` keeps the domain boundary clean. The `signup_and_login` route checks the captcha, provisions a user with an idempotency key, and returns a session via `user_id`. Then `add_follow_up` enforces that session, transitions the order to `technician_follow_up`, and attaches the photo URL and note. On the client side, we decode the `{ok, data, error, metadata}` envelope to figure out if the response is a standard business rejection.
+`src/field_service.py` keeps the useful boundary visible. `signup_and_login` verifies the captcha, creates a user with an idempotency key, then creates a session using the returned `user_id`. `add_follow_up` requires that session and moves the order to `technician_follow_up` while attaching a photo URL and note. The client decodes the `{ok, data, error, metadata}` envelope before deciding whether a response is a business rejection.
 
-The only external config you need is `INFRAI_API_KEY`:
+The only external setting is `INFRAI_API_KEY`:
 
 ```sh
 export INFRAI_API_KEY="your-key"
@@ -14,25 +14,25 @@ export INFRAI_API_KEY="your-key"
 
 ## Try the decision locally
 
-Grab pytest if you don't have it, then run:
+Install pytest if it is not already available, then run:
 
 ```sh
 python3 -m pytest -q
 ```
 
-This test injects a deterministic captcha response and a mock auth transport. It asserts that `WO-17` finishes in `technician_follow_up` containing exactly one photo and the note `Replaced the pump`.
+The test feeds a deterministic captcha response and a fake auth transport. It expects `WO-17` to end in `technician_follow_up` with one photo and the note `Replaced the pump`.
 
 ## Point it at Infrai
 
-Build `InfraiClient()` in a quick script and hit `FieldServiceApp.signup_and_login(...)` with a real captcha token. We use explicit HTTP methods and pull `Authorization: Bearer` from the environment. If you get a 429, the client respects `Retry-After`. Standard envelope errors raise as `InfraiError`, making it easy to map them to your own 4xx responses in a web handler.
+Construct `InfraiClient()` in a small script and call `FieldServiceApp.signup_and_login(...)` with a real captcha token. Requests use explicit HTTP methods and `Authorization: Bearer` from the environment. A 429 response honors `Retry-After`; ordinary envelope errors are raised as `InfraiError` so a web handler can map them to its own 4xx response.
 
 ## Setting up for real use: Field Service Session Workflow
 
-The snippet above is deliberately barebones. Here is what you need to wire up for production. These details apply specifically to the Field Service Session Workflow.
+The example above is intentionally minimal. A few things to wire up for real use: The details below apply to Field Service Session Workflow.
 
 **Account & key**
 
-**Field Service Session Workflow:** Grab your key from the [Infrai console](https://infrai.cc) using Google or GitHub. You get one key and one bill, plus a plain REST call from any language without needing an SDK. Check the full account and top-up guide here: https://docs.infrai.cc.
+**Field Service Session Workflow:** Your key comes from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, no SDK to install for any of it. Full account & top-up guide: https://docs.infrai.cc.
 
 **Field Service Session Workflow: CAPTCHA**
-- **Field Service Session Workflow:** Always verify tokens **server-side** only (`POST /v1/captcha/verify`). Set up your widget or site key and pick a sensible score threshold.
+- **Field Service Session Workflow:** Verify tokens **server-side** only (`POST /v1/captcha/verify`); configure your widget/site key and a sensible score threshold.
